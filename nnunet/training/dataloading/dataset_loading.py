@@ -1,4 +1,4 @@
-#    Copyright 2019 Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany
+#    Copyright 2020 Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
 #    you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ from batchgenerators.augmentations.utils import random_crop_2D_image_batched, pa
 import numpy as np
 from batchgenerators.dataloading import SlimDataLoaderBase
 from multiprocessing import Pool
+
+from nnunet.configuration import default_num_threads
 from nnunet.paths import preprocessing_output_dir
 from batchgenerators.utilities.file_and_folder_operations import *
 
@@ -52,7 +54,7 @@ def save_as_npz(args):
     np.savez_compressed(npy_file[:-3] + "npz", **{key: d})
 
 
-def unpack_dataset(folder, threads=8, key="data"):
+def unpack_dataset(folder, threads=default_num_threads, key="data"):
     """
     unpacks all npz files in a folder to npy (whatever you want to have unpacked must be saved unter key)
     :param folder:
@@ -67,7 +69,7 @@ def unpack_dataset(folder, threads=8, key="data"):
     p.join()
 
 
-def pack_dataset(folder, threads=8, key="data"):
+def pack_dataset(folder, threads=default_num_threads, key="data"):
     p = Pool(threads)
     npy_files = subfiles(folder, True, None, ".npy", True)
     p.map(save_as_npz, zip(npy_files, [key]*len(npy_files)))
@@ -155,7 +157,7 @@ class DataLoader3D(SlimDataLoaderBase):
         and increase CPU usage. Therefore, I advise you to call unpack_dataset(folder) first, which will unpack all npz
         to npy. Don't forget to call delete_npy(folder) after you are done with training?
         Why all the hassle? Well the decathlon dataset is huge. Using npy for everything will consume >1 TB and that is uncool
-        given that I (Fabian) will have to store that permanently on /datasets and my local computer. With htis strategy all
+        given that I (Fabian) will have to store that permanently on /datasets and my local computer. With this strategy all
         data is stored in a compressed format (factor 10 smaller) and only unpacked when needed.
         :param data: get this with load_dataset(folder, stage=0). Plug the return value in here and you are g2g (good to go)
         :param patch_size: what patch size will this data loader return? it is common practice to first load larger
@@ -538,7 +540,7 @@ class DataLoader2D(SlimDataLoaderBase):
 
 
 if __name__ == "__main__":
-    t = "Task02_Heart"
+    t = "Task002_Heart"
     p = join(preprocessing_output_dir, t, "stage1")
     dataset = load_dataset(p)
     with open(join(join(preprocessing_output_dir, t), "plans_stage1.pkl"), 'rb') as f:
