@@ -14,6 +14,7 @@
 from typing import Tuple
 
 import numpy as np
+import torch
 from nnunet.network_architecture.generic_modular_residual_UNet import FabiansUNet, get_default_network_config
 from nnunet.network_architecture.initialization import InitWeights_He
 from nnunet.training.network_training.nnUNetTrainer import nnUNetTrainer
@@ -54,13 +55,13 @@ class nnUNetTrainerV2_ResencUNet(nnUNetTrainerV2):
     def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True, step_size: float = 0.5,
                  save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
                  validation_folder_name: str = 'validation_raw', debug: bool = False, all_in_gpu: bool = False,
-                 force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z=0):
+                 force_separate_z: bool = None, interpolation_order: int = 3, interpolation_order_z=0,
+                 segmentation_export_kwargs: dict = None):
         ds = self.network.decoder.deep_supervision
         self.network.decoder.deep_supervision = False
         ret = nnUNetTrainer.validate(self, do_mirroring, use_sliding_window, step_size, save_softmax, use_gaussian,
                                      overwrite, validation_folder_name, debug, all_in_gpu,
-                                     force_separate_z=force_separate_z, interpolation_order=interpolation_order,
-                                     interpolation_order_z=interpolation_order_z)
+                                     segmentation_export_kwargs)
         self.network.decoder.deep_supervision = ds
         return ret
 
@@ -72,7 +73,7 @@ class nnUNetTrainerV2_ResencUNet(nnUNetTrainerV2):
                                                          all_in_gpu: bool = True,
                                                          verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
         ds = self.network.decoder.deep_supervision
-        self.network.deep_supervision = False
+        self.network.decoder.deep_supervision = False
         ret = nnUNetTrainer.predict_preprocessed_data_return_seg_and_softmax(self, data, do_mirroring, mirror_axes,
                                                                              use_sliding_window, step_size,
                                                                              use_gaussian, pad_border_mode, pad_kwargs,

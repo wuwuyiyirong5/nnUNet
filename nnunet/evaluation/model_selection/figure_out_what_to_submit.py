@@ -16,6 +16,8 @@
 from itertools import combinations
 import nnunet
 from batchgenerators.utilities.file_and_folder_operations import *
+from nnunet.evaluation.add_mean_dice_to_json import foreground_mean
+from nnunet.evaluation.model_selection.ensemble import ensemble
 from nnunet.paths import network_training_output_dir
 import numpy as np
 from subprocess import call
@@ -33,8 +35,12 @@ def find_task_name(folder, task_id):
 
 def get_mean_foreground_dice(json_file):
     results = load_json(json_file)
+    return get_foreground_mean(results)
+
+
+def get_foreground_mean(results):
     results_mean = results['results']['mean']
-    dice_scores = [results_mean[i]['Dice'] for i in results_mean.keys() if i != "0"]
+    dice_scores = [results_mean[i]['Dice'] for i in results_mean.keys() if i != "0" and i != 'mean']
     return np.mean(dice_scores)
 
 
@@ -55,7 +61,7 @@ def main():
                            help="nnUNetTrainer class for cascade model. Default: %s" % default_cascade_trainer)
     parser.add_argument("-pl", type=str, required=False, default=default_plans_identifier,
                            help="plans name, Default: %s" % default_plans_identifier)
-
+    parser.add_argument('-f', '--folds', nargs='+', default=(0, 1, 2, 3, 4), help="use this if you have non-standard folds")
     parser.add_argument("--strict", required=False, default=False, action="store_true",
                         help="set this flag if you want this script to crash of one of the models is missing")
 
@@ -67,6 +73,7 @@ def main():
     trc = args.ctr
     strict = args.strict
     pl = args.pl
+    folds = tuple(int(i) for i in args.folds)
 
     validation_folder = "validation_raw"
 
@@ -98,13 +105,14 @@ def main():
                 cv_niftis_folder = join(output_folder, "cv_niftis_raw")
                 if not isfile(postprocessing_json) or not isdir(cv_niftis_folder):
                     print("running missing postprocessing for %s and model %s" % (id_task_mapping[t], m))
-                    consolidate_folds(output_folder)
+                    consolidate_folds(output_folder, folds=folds)
                 assert isfile(postprocessing_json), "Postprocessing json missing, expected: %s" % postprocessing_json
                 assert isdir(cv_niftis_folder), "Folder with niftis from CV missing, expected: %s" % cv_niftis_folder
 
                 # obtain mean foreground dice
                 summary_file = join(cv_niftis_folder, "summary.json")
                 results[m] = get_mean_foreground_dice(summary_file)
+                foreground_mean(summary_file)
                 all_results[m] = load_json(summary_file)['results']['mean']
                 valid_models.append(m)
 
@@ -125,20 +133,20 @@ def main():
 
                 ensemble_name = "ensemble_" + m1 + "__" + trainer_m1 + "__" + pl + "--" + m2 + "__" + trainer_m2 + "__" + pl
                 output_folder_base = join(network_training_output_dir, "ensembles", id_task_mapping[t], ensemble_name)
+                maybe_mkdir_p(output_folder_base)
 
                 network1_folder = get_output_folder_name(m1, id_task_mapping[t], trainer_m1, pl)
                 network2_folder = get_output_folder_name(m2, id_task_mapping[t], trainer_m2, pl)
 
                 print("ensembling", network1_folder, network2_folder)
-                p = call(["python", join(nnunet.__path__[0], "evaluation/model_selection/ensemble.py"),
-                          network1_folder, network2_folder, output_folder_base, id_task_mapping[t], validation_folder])
-                if p != 0:
-                    raise RuntimeError("ensembling failed, see error message above (most likely you did not run model validation with --npz)")
-                # ensembling will automatically do postprocessing
+                ensemble(network1_folder, network2_folder, output_folder_base, id_task_mapping[t], validation_folder, folds)
+                # ensembling will automatically do postprocessingget_foreground_mean
 
                 # now get result of ensemble
                 results[ensemble_name] = get_mean_foreground_dice(join(output_folder_base, "ensembled_raw", "summary.json"))
-                all_results[ensemble_name] = load_json(join(output_folder_base, "ensembled_raw", "summary.json"))['results']['mean']
+                summary_file = join(output_folder_base, "ensembled_raw", "summary.json")
+                foreground_mean(summary_file)
+                all_results[ensemble_name] = load_json(summary_file)['results']['mean']
 
         # now print all mean foreground dice and highlight the best
         foreground_dices = list(results.values())
@@ -170,21 +178,22 @@ def main():
                 print(predict_str)
 
         summary_folder = join(network_training_output_dir, "ensembles", id_task_mapping[t])
+        maybe_mkdir_p(summary_folder)
         with open(join(summary_folder, "prediction_commands.txt"), 'w') as f:
             f.write(predict_str)
 
-        num_classes = len(all_results[best_model].keys())
+        num_classes = len([i for i in all_results[best_model].keys() if i != 'mean'])
         with open(join(summary_folder, "summary.csv"), 'w') as f:
             f.write("model")
-            for c in range(1, num_classes + 1):
+            for c in range(1, num_classes):
                 f.write(",class%d" % c)
             f.write(",average")
             f.write("\n")
             for m in all_results.keys():
                 f.write(m)
-                for c in range(1, num_classes + 1):
+                for c in range(1, num_classes):
                     f.write(",%01.4f" % all_results[m][str(c)]["Dice"])
-                f.write(",%01.4f" % results[m])
+                f.write(",%01.4f" % all_results[m]['mean']["Dice"])
                 f.write("\n")
 
 
