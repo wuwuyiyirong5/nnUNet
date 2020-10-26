@@ -451,6 +451,8 @@ def get_moreDA_augmentation(dataloader_train, dataloader_val, patch_size, params
     batchgenerator_val = MultiThreadedAugmenter(dataloader_val, val_transforms, max(params.get('num_threads') // 2, 1),
                                                 params.get("num_cached_per_thread"),
                                                 seeds=seeds_val, pin_memory=pin_memory)
+    #batchgenerator_val = SingleThreadedAugmenter(dataloader_val, val_transforms)
+
     return batchgenerator_train, batchgenerator_val
 
 

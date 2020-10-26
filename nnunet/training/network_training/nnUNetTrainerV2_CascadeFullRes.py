@@ -84,6 +84,7 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
                                   pad_mode="constant", pad_sides=self.pad_all_sides)
         else:
             raise NotImplementedError("2D has no cascade")
+
         return dl_tr, dl_val
 
     def process_plans(self, plans):
@@ -93,7 +94,7 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
     def setup_DA_params(self):
         super().setup_DA_params()
 
-        self.data_aug_params["num_cached_per_thread"] = 9
+        self.data_aug_params["num_cached_per_thread"] = 2
 
         self.data_aug_params['move_last_seg_chanel_to_data'] = True
         self.data_aug_params['cascade_do_cascade_augmentations'] = True
@@ -245,7 +246,7 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
         results = []
 
         for k in self.dataset_val.keys():
-            properties = self.dataset[k]['properties']
+            properties = load_pickle(self.dataset[k]['properties_file'])
             fname = properties['list_of_data_files'][0].split("/")[-1][:-12]
 
             if overwrite or (not isfile(join(output_folder, fname + ".nii.gz"))) or \
@@ -261,9 +262,11 @@ class nnUNetTrainerV2CascadeFullRes(nnUNetTrainerV2):
 
                 data_for_net = np.concatenate((data[:-1], to_one_hot(seg_from_prev_stage[0], range(1, self.num_classes))))
 
-                softmax_pred = self.predict_preprocessed_data_return_seg_and_softmax(
-                    data_for_net, do_mirroring, mirror_axes, use_sliding_window, step_size, use_gaussian,
-                    all_in_gpu=all_in_gpu)[1]
+                softmax_pred = self.predict_preprocessed_data_return_seg_and_softmax(data_for_net, do_mirroring,
+                                                                                     mirror_axes, use_sliding_window,
+                                                                                     step_size, use_gaussian,
+                                                                                     all_in_gpu=all_in_gpu,
+                                                                                     mixed_precision=self.fp16)[1]
 
                 softmax_pred = softmax_pred.transpose([0] + [i + 1 for i in self.transpose_backward])
 

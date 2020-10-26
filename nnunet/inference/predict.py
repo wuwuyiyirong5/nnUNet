@@ -129,7 +129,7 @@ def preprocess_multithreaded(trainer, list_of_lists, output_files, num_processes
 
 
 def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_threads_preprocessing,
-                  num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, fp16=None, overwrite_existing=False,
+                  num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, mixed_precision=True, overwrite_existing=False,
                   all_in_gpu=False, step_size=0.5, checkpoint_name="model_final_checkpoint",
                   segmentation_export_kwargs: dict = None):
     """
@@ -145,7 +145,7 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
     :param segs_from_prev_stage:
     :param do_tta: default: True, can be set to False for a 8x speedup at the cost of a reduced segmentation quality
     :param overwrite_existing: default: True
-    :param fp16: if None then we take no action. If True/False we overwrite what the model has in its init
+    :param mixed_precision: if None then we take no action. If True/False we overwrite what the model has in its init
     :return:
     """
     assert len(list_of_lists) == len(output_filenames)
@@ -179,7 +179,7 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
     torch.cuda.empty_cache()
 
     print("loading parameters for folds,", folds)
-    trainer, params = load_model_and_checkpoint_files(model, folds, fp16=fp16, checkpoint_name=checkpoint_name)
+    trainer, params = load_model_and_checkpoint_files(model, folds, mixed_precision=mixed_precision, checkpoint_name=checkpoint_name)
 
     if segmentation_export_kwargs is None:
         if 'segmentation_export_params' in trainer.plans.keys():
@@ -212,9 +212,9 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
         softmax = []
         for p in params:
             trainer.load_checkpoint_ram(p, False)
-            softmax.append(trainer.predict_preprocessed_data_return_seg_and_softmax(
-                d, do_tta, trainer.data_aug_params['mirror_axes'], True, step_size=step_size, use_gaussian=True,
-                all_in_gpu=all_in_gpu)[1][None])
+            softmax.append(trainer.predict_preprocessed_data_return_seg_and_softmax(d, do_tta, trainer.data_aug_params[
+                'mirror_axes'], True, step_size=step_size, use_gaussian=True, all_in_gpu=all_in_gpu,
+                                                                                    mixed_precision=mixed_precision)[1][None])
 
         softmax = np.vstack(softmax)
         softmax_mean = np.mean(softmax, 0)
@@ -283,7 +283,7 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
 
 
 def predict_cases_fast(model, list_of_lists, output_filenames, folds, num_threads_preprocessing,
-                       num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, fp16=None,
+                       num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, mixed_precision=True,
                        overwrite_existing=False,
                        all_in_gpu=False, step_size=0.5, checkpoint_name="model_final_checkpoint",
                        segmentation_export_kwargs: dict = None):
@@ -318,7 +318,7 @@ def predict_cases_fast(model, list_of_lists, output_filenames, folds, num_thread
     torch.cuda.empty_cache()
 
     print("loading parameters for folds,", folds)
-    trainer, params = load_model_and_checkpoint_files(model, folds, fp16=fp16, checkpoint_name=checkpoint_name)
+    trainer, params = load_model_and_checkpoint_files(model, folds, mixed_precision=mixed_precision, checkpoint_name=checkpoint_name)
 
     if segmentation_export_kwargs is None:
         if 'segmentation_export_params' in trainer.plans.keys():
@@ -358,9 +358,11 @@ def predict_cases_fast(model, list_of_lists, output_filenames, folds, num_thread
         for i, p in enumerate(params):
             trainer.load_checkpoint_ram(p, False)
 
-            res = trainer.predict_preprocessed_data_return_seg_and_softmax(
-                d, do_tta, trainer.data_aug_params['mirror_axes'], True, step_size=step_size, use_gaussian=True,
-                all_in_gpu=all_in_gpu)
+            res = trainer.predict_preprocessed_data_return_seg_and_softmax(d, do_tta,
+                                                                           trainer.data_aug_params['mirror_axes'], True,
+                                                                           step_size=step_size, use_gaussian=True,
+                                                                           all_in_gpu=all_in_gpu,
+                                                                           mixed_precision=mixed_precision)
 
             if len(params) > 1:
                 # otherwise we dont need this and we can save ourselves the time it takes to copy that
@@ -418,7 +420,7 @@ def predict_cases_fast(model, list_of_lists, output_filenames, folds, num_thread
 
 
 def predict_cases_fastest(model, list_of_lists, output_filenames, folds, num_threads_preprocessing,
-                          num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, fp16=None,
+                          num_threads_nifti_save, segs_from_prev_stage=None, do_tta=True, mixed_precision=True,
                           overwrite_existing=False, all_in_gpu=True, step_size=0.5,
                           checkpoint_name="model_final_checkpoint"):
     assert len(list_of_lists) == len(output_filenames)
@@ -452,7 +454,7 @@ def predict_cases_fastest(model, list_of_lists, output_filenames, folds, num_thr
     torch.cuda.empty_cache()
 
     print("loading parameters for folds,", folds)
-    trainer, params = load_model_and_checkpoint_files(model, folds, fp16=fp16, checkpoint_name=checkpoint_name)
+    trainer, params = load_model_and_checkpoint_files(model, folds, mixed_precision=mixed_precision, checkpoint_name=checkpoint_name)
 
     print("starting preprocessing generator")
     preprocessing = preprocess_multithreaded(trainer, list_of_lists, cleaned_output_files, num_threads_preprocessing,
@@ -477,10 +479,11 @@ def predict_cases_fastest(model, list_of_lists, output_filenames, folds, num_thr
 
         for i, p in enumerate(params):
             trainer.load_checkpoint_ram(p, False)
-            res = trainer.predict_preprocessed_data_return_seg_and_softmax(
-                d, do_tta, trainer.data_aug_params['mirror_axes'], True, step_size=step_size, use_gaussian=True,
-                all_in_gpu=all_in_gpu
-            )
+            res = trainer.predict_preprocessed_data_return_seg_and_softmax(d, do_tta,
+                                                                           trainer.data_aug_params['mirror_axes'], True,
+                                                                           step_size=step_size, use_gaussian=True,
+                                                                           all_in_gpu=all_in_gpu,
+                                                                           mixed_precision=mixed_precision)
             if len(params) > 1:
                 # otherwise we dont need this and we can save ourselves the time it takes to copy that
                 all_softmax_outputs[i] = res[1]
@@ -570,7 +573,7 @@ def check_input_folder_and_return_caseIDs(input_folder, expected_num_modalities)
 def predict_from_folder(model: str, input_folder: str, output_folder: str, folds: Union[Tuple[int], List[int]],
                         save_npz: bool, num_threads_preprocessing: int, num_threads_nifti_save: int,
                         lowres_segmentations: Union[str, None],
-                        part_id: int, num_parts: int, tta: bool, fp16: bool = False,
+                        part_id: int, num_parts: int, tta: bool, mixed_precision: bool = True,
                         overwrite_existing: bool = True, mode: str = 'normal', overwrite_all_in_gpu: bool = None,
                         step_size: float = 0.5, checkpoint_name: str = "model_final_checkpoint",
                         segmentation_export_kwargs: dict = None):
@@ -588,7 +591,7 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
     :param part_id:
     :param num_parts:
     :param tta:
-    :param fp16:
+    :param mixed_precision:
     :param overwrite_existing: if not None then it will be overwritten with whatever is in there. None is default (no overwrite)
     :return:
     """
@@ -623,7 +626,7 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
 
         return predict_cases(model, list_of_lists[part_id::num_parts], output_files[part_id::num_parts], folds,
                              save_npz, num_threads_preprocessing, num_threads_nifti_save, lowres_segmentations, tta,
-                             fp16=fp16, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
+                             mixed_precision=mixed_precision, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
                              step_size=step_size, checkpoint_name=checkpoint_name,
                              segmentation_export_kwargs=segmentation_export_kwargs)
     elif mode == "fast":
@@ -635,7 +638,7 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
         assert save_npz is False
         return predict_cases_fast(model, list_of_lists[part_id::num_parts], output_files[part_id::num_parts], folds,
                                   num_threads_preprocessing, num_threads_nifti_save, lowres_segmentations,
-                                  tta, fp16=fp16, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
+                                  tta, mixed_precision=mixed_precision, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
                                   step_size=step_size, checkpoint_name=checkpoint_name,
                                   segmentation_export_kwargs=segmentation_export_kwargs)
     elif mode == "fastest":
@@ -647,7 +650,7 @@ def predict_from_folder(model: str, input_folder: str, output_folder: str, folds
         assert save_npz is False
         return predict_cases_fastest(model, list_of_lists[part_id::num_parts], output_files[part_id::num_parts], folds,
                                      num_threads_preprocessing, num_threads_nifti_save, lowres_segmentations,
-                                     tta, fp16=fp16, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
+                                     tta, mixed_precision=mixed_precision, overwrite_existing=overwrite_existing, all_in_gpu=all_in_gpu,
                                      step_size=step_size, checkpoint_name=checkpoint_name)
     else:
         raise ValueError("unrecognized mode. Must be normal, fast or fastest")
@@ -705,8 +708,6 @@ if __name__ == "__main__":
                                                                            "augmentation (speedup of factor "
                                                                            "4(2D)/8(3D)), "
                                                                            "lower quality segmentations")
-    parser.add_argument("--fp16", required=False, help="Flag for inference in FP16, default = off. DO NOT USE! It "
-                                                       "doesn't work", action="store_true")
     parser.add_argument("--overwrite_existing", required=False, type=int, default=1, help="Set this to 0 if you need "
                                                                                           "to resume a previous "
                                                                                           "prediction. Default: 1 "
@@ -722,6 +723,10 @@ if __name__ == "__main__":
     #                     help="order of interpolation along z is z is done differently")
     # parser.add_argument("--force_separate_z", required=False, default="None", type=str,
     #                     help="force_separate_z resampling. Can be None, True or False, has no effect if mode=fastest")
+    parser.add_argument('--disable_mixed_precision', default=False, action='store_true', required=False,
+                        help='Predictions are done with mixed precision by default. This improves speed and reduces '
+                             'the required vram. If you want to disable mixed precision you can set this flag. Note '
+                             'that yhis is not recommended (mixed precision is ~2x faster!)')
 
     args = parser.parse_args()
     input_folder = args.input_folder
@@ -735,7 +740,6 @@ if __name__ == "__main__":
     num_threads_preprocessing = args.num_threads_preprocessing
     num_threads_nifti_save = args.num_threads_nifti_save
     tta = args.tta
-    fp16 = args.fp16
     step_size = args.step_size
 
     # interp_order = args.interp_order
@@ -750,9 +754,6 @@ if __name__ == "__main__":
     #     force_separate_z = True
     # else:
     #     raise ValueError("force_separate_z must be None, True or False. Given: %s" % force_separate_z)
-
-    if fp16:
-        raise RuntimeError("FP16 support for inference does not work yet. Sorry :-/")
 
     overwrite = args.overwrite_existing
     mode = args.mode
@@ -794,5 +795,5 @@ if __name__ == "__main__":
         all_in_gpu = False
 
     predict_from_folder(model, input_folder, output_folder, folds, save_npz, num_threads_preprocessing,
-                        num_threads_nifti_save, lowres_segmentations, part_id, num_parts, tta, fp16=fp16,
+                        num_threads_nifti_save, lowres_segmentations, part_id, num_parts, tta, mixed_precision=not args.disable_mixed_precision,
                         overwrite_existing=overwrite, mode=mode, overwrite_all_in_gpu=all_in_gpu, step_size=step_size)
